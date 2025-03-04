@@ -10,5 +10,13 @@
         "activate_script": "default"
       }
     }
-  }
+  },
+  "languages": {
+    "Python": {
+      "format_on_save": { "language_server": { "name": "ruff" } },
+      "formatter": { "language_server": { "name": "ruff" } },
+      "language_servers": ["pyright", "ruff"]
+    }
+  },
+  "autosave": "on_focus_change"
 }

@@ -35,13 +35,24 @@
 [Financial Statement and Notes Data Sets](https://www.sec.gov/data-research/sec-markets-data/financial-statement-notes-data-sets)
 
 
-I     -  Statement of Income
-IP    -  Statement of Income (Parenthetical)
-CI    -  Statement of Comprehensive Income
-CIP   -  Statement of Comprehensive Income (Parenthetical)
-B     -  Balance Sheet
-BP    -  Balance Sheet (Parenthetical)
-C     -  Statement of Cash Flows
-CP    -  Statement of Cash Flows (Parenthetical)
-SE    -  Statement of Equity
-SEP   -  Statement of Equity (Parenthetical)
+## IFRS
+- Financial position
+- Comprehensive income
+- Changes in equity
+- Cash flows
+
+---
+
+- I     -  Statement of Income
+- IP    -  Statement of Income (Parenthetical)
+- CI    -  Statement of Comprehensive Income
+- CIP   -  Statement of Comprehensive Income (Parenthetical)
+- B     -  Balance Sheet
+- BP    -  Balance Sheet (Parenthetical)
+- C     -  Statement of Cash Flows
+- CP    -  Statement of Cash Flows (Parenthetical)
+- SE    -  Statement of Equity
+- SEP   -  Statement of Equity (Parenthetical)
+
+
+

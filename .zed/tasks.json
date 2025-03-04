@@ -3,7 +3,7 @@
 // Example:
 [
   {
-    "label": "Run chat.py",
+    "label": "Run chat.pyP",
     "command": "/home/sullija/miniconda3/envs/py312/bin/python",
     "args": ["chat.py"],
     // Env overrides for the command, will be appended to the terminal's environment from the settings.
