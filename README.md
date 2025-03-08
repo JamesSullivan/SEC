@@ -6,6 +6,8 @@
 
 [Macrotrends](https://www.macrotrends.net/stocks/charts/GOLD/barrick-gold/financial-statements#google_vignette)
 
+[PublicView product](https://www.publicview.ai/chat)
+
 ## Open Source
 [Arelle is an end-to-end open source XBRL platform](https://arelle.readthedocs.io/en/2.21.3/index.html)
 

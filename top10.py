@@ -21,3 +21,17 @@ str_num: List[str] = list(map(lambda n: f"{n:0>10}", num))
 
 for n in num:
     print(f"{n}, ", end="")
+# %% Cell 3
+from tabulate import tabulate
+import pandas as pd
+
+# creating a DataFrame
+dict = {
+    "Name": ["Martha", "Tim", "Rob", "Georgia"],
+    "Maths": [87, 91, 97, 95],
+    "Science": [83, 99, 84, 76],
+}
+df = pd.DataFrame(dict)
+print(df)
+# displaying the DataFrame
+print(tabulate(df, headers="keys", tablefmt="psql"))
