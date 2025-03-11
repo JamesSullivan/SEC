@@ -1,21 +1,17 @@
-import duckdb
+# %% Cell 1
 import os
 import pandas as pd
-from IPython.display import display
+
+from IPython.display import display, HTML
 from typing import List, Set, Dict, Tuple, Optional
 
-ciks = [1009001]
-sql_ciks: str = "(" + ", ".join(map(str, ciks)) + ")"
-print(f"sql_ciks: {sql_ciks}")
-# Connect to DuckDB (in-memory database by default)
-con = duckdb.connect()
-yearq = "2023q1"
-
-
-def load_tsv(quarter, table):
-    # Load the TSV file into a table ../2023q1_notes/sub.tsv
-    df = pd.read_csv(f"../{quarter}_notes/{table}.tsv", delimiter="\t")
-    return df
+ciks: List[int] = [1164727, 2809, 756894, 1323404,
+                   886986, 1456346, 1725964, 1009001, 1589239, 701818]
+print(f"ciks: {ciks}")
+adsh_values: List[str] = []
+dimh_values: List[str] = []
+# sql_ciks: str = "(" + ", ".join(map(str, ciks)) + ")"
+yearq = "2023q4"
 
 
 def save_or_append_dataframe(df: pd.DataFrame, name: str):
@@ -50,13 +46,42 @@ def save_or_append_dataframe(df: pd.DataFrame, name: str):
             print(f"Error saving to file: {e}")
 
 
-df = load_tsv(yearq, "sub")
-df_sub = df.query(f"cik in {ciks}")
-print(len(df), len(df_sub))
-adsh_values = df_sub["adsh"].tolist()
-print(f"{adsh_values=}")
-# print(f"{type(adsh_values)} {adsh_values}")
-# duckdb.sql(f"SELECT * FROM df_sub WHERE cik IN {sql_ciks};")
-save_or_append_dataframe(df_sub, "sub")
-display(df_sub)
-# filtered_df.iloc[:, :10]
+def load_tsv(quarter: str, table: str) -> pd.DataFrame:
+    # Load the TSV file into a table ../2023q1_notes/sub.tsv
+    return pd.read_csv(f"../{quarter}_notes/{table}.tsv", delimiter="\t")
+
+
+def load_cik(quarter: str, table: str) -> pd.DataFrame:
+    df = load_tsv(quarter, table)
+    match table:
+        case "sub":
+            query = f"cik in {ciks}"
+        case "tag":
+            query = f"version in {adsh_values}"
+        case "num" | "txt" | "ren" | "pre" | "cal":
+            query = f"adsh in {adsh_values}"
+        case "dim":
+            query = f"dimhash in {dimh_values}"
+        case "txt":
+            query = f"adsh in {adsh_values}"
+        case _:
+            raise ValueError(f"Invalid table: {table}")
+    df_sub = df.query(query)
+    print(table, len(df), len(df_sub))
+    save_or_append_dataframe(df_sub, table)
+    return df_sub
+
+
+# %% Cell 2
+df = load_cik(yearq, "sub")
+adsh_values = df["adsh"].tolist()
+# print(f"{adsh_values=}")
+df_num = load_cik(yearq, "num")
+dimh_set = set(df_num['dimh'])
+dimh_set.discard('0x00000000')
+dimh_values = list(dimh_set)
+# print(f"{dimh_set=}")
+tables = ["tag", "dim", "txt", "ren", "pre", "cal"]
+for table in tables:
+    df = load_cik(yearq, table)  # print(f"{adsh_values=}")
+# print(df.head())
