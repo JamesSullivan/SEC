@@ -1,6 +1,7 @@
 # %% Cell 1
 import os
 import pandas as pd
+import zipfile
 
 from IPython.display import display, HTML
 from typing import List, Set, Dict, Tuple, Optional
@@ -11,7 +12,6 @@ print(f"ciks: {ciks}")
 adsh_values: List[str] = []
 dimh_values: List[str] = []
 # sql_ciks: str = "(" + ", ".join(map(str, ciks)) + ")"
-yearq = "2023q4"
 
 
 def save_or_append_dataframe(df: pd.DataFrame, name: str):
@@ -46,13 +46,9 @@ def save_or_append_dataframe(df: pd.DataFrame, name: str):
             print(f"Error saving to file: {e}")
 
 
-def load_tsv(quarter: str, table: str) -> pd.DataFrame:
-    # Load the TSV file into a table ../2023q1_notes/sub.tsv
-    return pd.read_csv(f"../{quarter}_notes/{table}.tsv", delimiter="\t")
-
-
-def load_cik(quarter: str, table: str) -> pd.DataFrame:
-    df = load_tsv(quarter, table)
+def load_cik(df: pd.DataFrame, quarter: str, table: str) -> pd.DataFrame:
+    global ciks, adsh_values, dimh_values
+    query: str = ""
     match table:
         case "sub":
             query = f"cik in {ciks}"
@@ -67,21 +63,86 @@ def load_cik(quarter: str, table: str) -> pd.DataFrame:
         case _:
             raise ValueError(f"Invalid table: {table}")
     df_sub = df.query(query)
-    print(table, len(df), len(df_sub))
+    match table:
+        case "sub":
+            adsh_values = df_sub["adsh"].tolist()
+        case "num":
+            dimh_set = set(df_sub['dimh'])
+            dimh_set.discard('0x00000000')
+            dimh_values = list(dimh_set)
+            # print(f"{dimh_values=}")
+        case _:
+            pass
+    print(quarter, table, len(df), len(df_sub))
     save_or_append_dataframe(df_sub, table)
     return df_sub
 
+tables = ["tag", "dim", "txt", "ren", "pre", "cal"]
+table_files = [table + ".tsv" for table in tables]
+
+def get_string_before_last_underscore(input_string):
+    """
+    Returns the portion of the input string up to (but not including) the last underscore.
+
+    Args:
+        input_string (str): The input string.
+
+    Returns:
+        str: The substring before the last underscore, or the original string if no underscore is found.
+    """
+    last_underscore_index = input_string.rfind("_")  # Find the last occurrence of "_"
+
+    if last_underscore_index != -1:  # Check if an underscore was found
+        return input_string[:last_underscore_index]
+    else:
+        return input_string  # Return the original string if no underscore is present
+
+
 
 # %% Cell 2
-df = load_cik(yearq, "sub")
-adsh_values = df["adsh"].tolist()
-# print(f"{adsh_values=}")
-df_num = load_cik(yearq, "num")
-dimh_set = set(df_num['dimh'])
-dimh_set.discard('0x00000000')
-dimh_values = list(dimh_set)
-# print(f"{dimh_set=}")
-tables = ["tag", "dim", "txt", "ren", "pre", "cal"]
-for table in tables:
-    df = load_cik(yearq, table)  # print(f"{adsh_values=}")
-# print(df.head())
+directory = "/mnt/usb-TOSHIBA_External_USB_3.0_20141121000522F-0:0-part1/sullija/sec_data2"
+for filename in os.listdir(directory):
+    zn = get_string_before_last_underscore(filename)
+    print(f"\r\n{zn=}")
+    if filename.endswith(".zip"):
+        zip_path = os.path.join(directory, filename)
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                for file_info in zip_ref.infolist():
+                    if file_info.filename == "sub.tsv":
+                        fn = file_info.filename.split(".")[0]
+                        with zip_ref.open(file_info) as tsv_file:
+                            try:
+                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
+                                load_cik(df, zn, fn)
+                            except Exception as e:
+                                print(f"An unexpected error occurred while processing {filename}: {file_info.filename}. Error: {e}")
+                for file_info in zip_ref.infolist():
+                    if file_info.filename == "num.tsv":
+                        fn = file_info.filename.split(".")[0]
+                        with zip_ref.open(file_info) as tsv_file:
+                            try:
+                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
+                                load_cik(df, zn, fn)
+                            except Exception as e:
+                                print(f"An unexpected error occurred while processing {filename}: {file_info.filename}. Error: {e}")                
+                for file_info in zip_ref.infolist():
+                    if file_info.filename in table_files:
+                        fn = file_info.filename.split(".")[0]
+                        with zip_ref.open(file_info) as tsv_file:
+                            try:
+                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
+                                load_cik(df, zn, fn)
+                            except pd.errors.EmptyDataError:
+                                print(f"Warning: Empty TSV file found in {filename}: {file_info.filename}")
+                            except pd.errors.ParserError as e:
+                                print(f"Error parsing TSV in {filename}: {file_info.filename}. Error: {e}")
+                            except Exception as e:
+                                print(f"An unexpected error occurred while processing {filename}: {file_info.filename}. Error: {e}")
+        except zipfile.BadZipFile:
+            print(f"Warning: Bad zip file: {filename}")
+        except Exception as e:
+            print(f"An unexpected error occurred while processing {filename}. Error: {e}")
+
+
+# %%
