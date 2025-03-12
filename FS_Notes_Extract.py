@@ -1,6 +1,7 @@
 # %% Cell 1
 import os
 import pandas as pd
+import sys
 import zipfile
 
 from IPython.display import display, HTML
@@ -45,10 +46,57 @@ def save_or_append_dataframe(df: pd.DataFrame, name: str):
         except Exception as e:
             print(f"Error saving to file: {e}")
 
+def load_fixed_columns_tsv_from_file(tsv_file, num_columns=20):
+    """
+    Loads a TSV file with a fixed number of columns into a pandas DataFrame.
 
-def load_cik(df: pd.DataFrame, quarter: str, table: str) -> pd.DataFrame:
+    Args:
+        file_path (str): The path to the TSV file.
+        num_columns (int): The expected number of columns in the TSV.
+
+    Returns:
+        pandas.DataFrame: The DataFrame, or None if an error occurs.
+    """
+    try:
+        tsv_content = tsv_file.read().decode('utf-8')
+        lines = tsv_content.splitlines() # split into lines
+
+        data = []
+        for line in lines:
+            row = line.strip().split('\t')
+            if len(row) > num_columns:
+                row = row[:num_columns - 1] + ['\t'.join(row[num_columns - 1:])]
+            # elif len(row) < num_columns:
+            #     print(f"Warning: line with {len(row)} columns instead of {num_columns}")
+            #     continue #skip row.
+
+            data.append(row)
+        # print(data[:5])
+        columns = data[0]
+        data = data[1:]
+        df = pd.DataFrame(data, columns=columns)
+        # print(df.head())
+        # sys.exit()
+        return df
+
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return pd.DataFrame()
+
+def load_cik(tsv_file, quarter: str, table: str) -> pd.DataFrame:
     global ciks, adsh_values, dimh_values
     query: str = ""
+    df: pd.DataFrame = pd.DataFrame()
+    match table:
+        case "txt":
+            df = load_fixed_columns_tsv_from_file(tsv_file, num_columns=20)
+        case "tag":
+            df = load_fixed_columns_tsv_from_file(tsv_file, num_columns=9)
+        case _:
+            df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
     match table:
         case "sub":
             query = f"cik in {ciks}"
@@ -100,7 +148,7 @@ def get_string_before_last_underscore(input_string):
 
 
 # %% Cell 2
-directory = "/mnt/usb-TOSHIBA_External_USB_3.0_20141121000522F-0:0-part1/sullija/sec_data2"
+directory = "/mnt/usb-TOSHIBA_External_USB_3.0_20141121000522F-0:0-part1/sullija/sec_data"
 for filename in os.listdir(directory):
     zn = get_string_before_last_underscore(filename)
     print(f"\r\n{zn=}")
@@ -113,8 +161,7 @@ for filename in os.listdir(directory):
                         fn = file_info.filename.split(".")[0]
                         with zip_ref.open(file_info) as tsv_file:
                             try:
-                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
-                                load_cik(df, zn, fn)
+                                load_cik(tsv_file, zn, fn)
                             except Exception as e:
                                 print(f"An unexpected error occurred while processing {filename}: {file_info.filename}. Error: {e}")
                 for file_info in zip_ref.infolist():
@@ -122,8 +169,7 @@ for filename in os.listdir(directory):
                         fn = file_info.filename.split(".")[0]
                         with zip_ref.open(file_info) as tsv_file:
                             try:
-                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
-                                load_cik(df, zn, fn)
+                                load_cik(tsv_file, zn, fn)
                             except Exception as e:
                                 print(f"An unexpected error occurred while processing {filename}: {file_info.filename}. Error: {e}")                
                 for file_info in zip_ref.infolist():
@@ -131,8 +177,7 @@ for filename in os.listdir(directory):
                         fn = file_info.filename.split(".")[0]
                         with zip_ref.open(file_info) as tsv_file:
                             try:
-                                df = pd.read_csv(tsv_file, sep='\t')  # Read the .tsv file
-                                load_cik(df, zn, fn)
+                                load_cik(tsv_file, zn, fn)
                             except pd.errors.EmptyDataError:
                                 print(f"Warning: Empty TSV file found in {filename}: {file_info.filename}")
                             except pd.errors.ParserError as e:
