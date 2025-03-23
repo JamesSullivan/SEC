@@ -1,0 +1,1 @@
+conda create -n "py312" python=3.12 ipython jupyter numpy pandas matplotlib pydantic pytest python-dotenv pandas-stubs types-requests types-python-dateutil 
