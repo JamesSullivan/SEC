@@ -1,7 +1,7 @@
 # Project Specific
 db.duckdb
 db_all.duckdb
-data/tables_all/
+data/tables_*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

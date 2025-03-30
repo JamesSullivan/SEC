@@ -8,8 +8,8 @@ import zipfile
 from IPython.display import display, HTML
 from typing import List, Set, Dict, Tuple, Optional
 
-# ciks: List[int] = [1164727, 2809, 756894, 1323404, 886986, 1456346, 1725964, 1009001, 1589239, 701818]
-ciks: List[int] = [1009001]
+ciks: List[int] = [1164727, 2809, 756894, 1323404, 886986, 1456346, 1725964, 1009001, 1589239, 701818]
+# ciks: List[int] = [1009001]
 print(f"ciks: {ciks}")
 adsh_values: List[str] = []
 dimh_values: List[str] = []
@@ -211,7 +211,7 @@ import duckdb
 import os
 import pandas as pd
 
-def load_csvs_to_duckdb(folder_path="./tables", database_name="db.duckdb"):
+def load_csvs_to_duckdb(folder_path="../data/tables", database_name="../db.duckdb"):
     """
     Loads all CSV files from a folder into a DuckDB database.
 
@@ -245,4 +245,5 @@ def load_csvs_to_duckdb(folder_path="./tables", database_name="db.duckdb"):
         if 'con' in locals():
             con.close()
 
-load_csvs_to_duckdb()
+load_csvs_to_duckdb(folder_path="../data/tables_all", database_name="../db_all.duckdb")
+# %%
