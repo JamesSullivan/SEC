@@ -1,4 +1,5 @@
 
+# from https://www.sec.gov/data-research/sec-markets-data/financial-statement-notes-data-sets
 
 url_list = [
 # "https://www.sec.gov/files/dera/data/financial-statement-notes-data-sets/2025_02_notes.zip",
