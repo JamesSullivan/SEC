@@ -36,6 +36,26 @@
 
 [Financial Statement and Notes Data Sets](https://www.sec.gov/data-research/sec-markets-data/financial-statement-notes-data-sets)
 
+## Database,
+
+adsh 20 char accession (submission) number
+
+sub  (submissions)
+- adsh (pk)-> ren, num txt, pre, cal
+- cik (important) company identifier
+
+pre (presentation)
+- adsh + report + line (pk)
+- adsh -> sub, ren, num, txt, cal
+- adsh, tag, version -> num
+- tag (field as reported) 
+- plabel (field standardized)
+
+```sql
+-- query to get income statement for submission 0000891618-09-000150
+select * from pre where report = 2 (or statement = 'IS') and adsh = '0000891618-09-000150' order by line;
+```
+- 
 
 ## IFRS
 - Financial position
