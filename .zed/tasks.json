@@ -4,7 +4,7 @@
 [
   {
     "label": "Run chat.pyP",
-    "command": "/home/sullija/miniconda3/envs/py312/bin/python",
+    "command": "/opt/miniconda3/envs/py312",
     "args": ["chat.py"],
     // Env overrides for the command, will be appended to the terminal's environment from the settings.
     //"env": { "foo": "bar" },

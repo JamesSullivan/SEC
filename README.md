@@ -36,6 +36,19 @@
 
 [Financial Statement and Notes Data Sets](https://www.sec.gov/data-research/sec-markets-data/financial-statement-notes-data-sets)
 
+
+
+## Libraries and Tools
+
+[Personalized AI Research Assistant](https://notebooklm.google/)
+
+[Ibis is the portable Python dataframe library](https://github.com/ibis-project/ibis?utm_source=Klaviyo&utm_medium=email&utm_campaign=friday Campaign)
+
+
+[A DuckDB DBMS extension that deeply integrates LLM and RAG capabilities](https://github.com/dsg-polymtl/flockmtl)
+
+json-repair library available on pypi for truncated JSON from LLMs
+
 ## Database,
 
 adsh 20 char accession (submission) number
