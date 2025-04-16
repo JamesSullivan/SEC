@@ -8,7 +8,8 @@ import zipfile
 from IPython.display import display, HTML
 from typing import List, Set, Dict, Tuple, Optional
 
-ciks: List[int] = [1164727, 2809, 756894, 1323404, 886986, 1456346, 1725964, 1009001, 1589239, 701818]
+# ciks: List[int] = [1164727, 2809, 756894, 1323404, 886986, 1456346, 1725964, 1009001, 1589239, 701818] # top tsx mining companies
+ciks: List[int] = [1824723, 789019, 1045810] # Google, Microsoft, NVidia,
 # ciks: List[int] = [1009001]
 print(f"ciks: {ciks}")
 adsh_values: List[str] = []
@@ -25,7 +26,7 @@ def save_or_append_dataframe(df: pd.DataFrame, name: str):
         df (pandas.DataFrame): The DataFrame to save or append.
         filepath (str): The path to the file.
     """
-    filepath = f"./tables/{name}.csv"
+    filepath = f"../data/tables/{name}.csv"
     df = df.drop_duplicates()  # Remove duplicates before anything else.
 
     if os.path.exists(filepath):
@@ -245,5 +246,6 @@ def load_csvs_to_duckdb(folder_path="../data/tables", database_name="../db.duckd
         if 'con' in locals():
             con.close()
 
-load_csvs_to_duckdb(folder_path="../data/tables_all", database_name="../db_all.duckdb")
+name = 'google_ms_nvidia'
+load_csvs_to_duckdb(folder_path="../data/tables_{name}", database_name="../db_{name}.duckdb")
 # %%
