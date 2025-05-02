@@ -47,6 +47,9 @@
 
 [A DuckDB DBMS extension that deeply integrates LLM and RAG capabilities](https://github.com/dsg-polymtl/flockmtl)
 
+[Prototype your product ideas with AI](https://www.magicpatterns.com/)
+
+
 json-repair library available on pypi for truncated JSON from LLMs
 
 ## Database,

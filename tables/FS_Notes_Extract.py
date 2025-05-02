@@ -9,7 +9,7 @@ from IPython.display import display, HTML
 from typing import List, Set, Dict, Tuple, Optional
 
 # ciks: List[int] = [1164727, 2809, 756894, 1323404, 886986, 1456346, 1725964, 1009001, 1589239, 701818] # top tsx mining companies
-ciks: List[int] = [1824723, 789019, 1045810] # Google, Microsoft, NVidia,
+ciks: List[int] = [1652044, 789019, 1045810] # Google, Microsoft, NVidia,
 # ciks: List[int] = [1009001]
 print(f"ciks: {ciks}")
 adsh_values: List[str] = []
@@ -247,5 +247,5 @@ def load_csvs_to_duckdb(folder_path="../data/tables", database_name="../db.duckd
             con.close()
 
 name = 'google_ms_nvidia'
-load_csvs_to_duckdb(folder_path="../data/tables_{name}", database_name="../db_{name}.duckdb")
+load_csvs_to_duckdb(folder_path=f"../data/tables_{name}", database_name=f"../db_{name}.duckdb")
 # %%
