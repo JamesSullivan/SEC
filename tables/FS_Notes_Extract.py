@@ -212,40 +212,453 @@ import duckdb
 import os
 import pandas as pd
 
-def load_csvs_to_duckdb(folder_path="../data/tables", database_name="../db.duckdb"):
+def load_csvs_to_duckdb(data_dir="../data/tables/", database_name="../db.duckdb"):
     """
     Loads all CSV files from a folder into a DuckDB database.
 
     Args:
-        folder_path (str): The path to the folder containing the CSV files.
+        data_dir (str): The path to the folder containing the CSV files.
         database_name (str): The name of the DuckDB database to create or connect to.
     """
+    conn = duckdb.connect(database=database_name)
+    sec_pk = {'sub': 'adsh', 'tag': 'tag, version', 'ren': 'adsh, report', 'pre': 'adsh, report, line', 'cal': 'adsh, grp, arc', 'dim': 'dimhash'}
+    sec_date_column =  {'sub': ['changed', 'period', 'filed', 'floatdate'], 'num': ['ddate'], 'txt': ['ddate']} 
 
+
+    # List all files in the specified directory
+    all_files = os.listdir(data_dir)
+    csv_files = [f for f in all_files if f.endswith('.csv')]
+    # Iterate through the CSV files and load them into DuckDB tables
+    for file_name in csv_files:
+        file_path = os.path.join(data_dir, file_name)
+        table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table nam
+        try:
+            conn.execute(f"""CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM read_csv('{file_path}', AUTO_DETECT=TRUE);""")
+            if table_name in sec_date_column:
+                strptimes: str = ""
+                for col in sec_date_column[table_name]:
+                    sql_alter = f"ALTER TABLE {table_name} ALTER COLUMN {col} TYPE DATE USING STRPTIME(CAST({col} AS BIGINT)::VARCHAR, '%Y%m%d')::DATE;"
+                    print(sql_alter)
+                    conn.execute(sql_alter)
+            if table_name in sec_pk:
+                # Add primary key constraint
+                sql_pk = f"ALTER TABLE {table_name} ADD PRIMARY KEY ({sec_pk[table_name]});"
+                print(sql_pk)
+                conn.execute(sql_pk)
+            print(f"Loaded '{file_name}' into  view '{table_name}'")
+        except Exception as e:
+            print(f"Error loading '{file_name}': {e}")
+
+    conn.close()
+
+name = 'alphabet-ms-nvidia'
+load_csvs_to_duckdb(data_dir=f"../data/tables_{name}", database_name=f"../{name}.duckdb")
+
+
+
+# %% Cell 4
+import sqlite3
+import os
+import pandas as pd
+
+def load_csvs_to_duckdb(data_dir="../data/tables/", database_name="../db.db"):
+    """
+    Loads all CSV files from a folder into a database.
+
+    Args:
+        data_dir (str): The path to the folder containing the CSV files.
+        database_name (str): The name of the database to create or connect to.
+    """
+    conn = sqlite3.connect(database_name)
+    sec_pk = {'sub': 'adsh', 'tag': 'tag, version', 'ren': 'adsh, report', 'pre': 'adsh, report, line', 'cal': 'adsh, grp, arc', 'dim': 'dimhash'}
+    sec_date_column =  {'sub': ['changed', 'period', 'filed', 'floatdate'], 'num': ['ddate'], 'txt': ['ddate']} 
+
+
+    # List all files in the specified directory
+    all_files = os.listdir(data_dir)
+    csv_files = [f for f in all_files if f.endswith('.csv')]
+    # Iterate through the CSV files and load them into tables
+    for file_name in csv_files:
+        file_path = os.path.join(data_dir, file_name)
+        table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table nam
+        try:
+            conn.execute(f"""CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM read_csv('{file_path}', AUTO_DETECT=TRUE);""")
+            if table_name in sec_date_column:
+                strptimes: str = ""
+                for col in sec_date_column[table_name]:
+                    sql_alter = f"ALTER TABLE {table_name} ALTER COLUMN {col} TYPE DATE USING STRPTIME(CAST({col} AS BIGINT)::VARCHAR, '%Y%m%d')::DATE;"
+                    print(sql_alter)
+                    conn.execute(sql_alter)
+            if table_name in sec_pk:
+                # Add primary key constraint
+                sql_pk = f"ALTER TABLE {table_name} ADD PRIMARY KEY ({sec_pk[table_name]});"
+                print(sql_pk)
+                conn.execute(sql_pk)
+            print(f"Loaded '{file_name}' into view '{table_name}'")
+        except Exception as e:
+            print(f"Error loading '{file_name}': {e}")
+
+    conn.close()
+
+name = 'alphabet-ms-nvidia'
+load_csvs_to_duckdb(data_dir=f"../data/tables_{name}", database_name=f"../{name}.db")
+
+
+# %% Cell 5
+import sqlite3
+import os
+import pandas as pd
+
+def load_csvs_to_sqlite(data_dir="../data/tables/", database_name="../db.sqlite"):
+    """
+    Loads all CSV files from a folder into a SQLite database using pandas.
+    Creates tables with primary keys (if defined in sec_pk) on initial load
+    and attempts to convert YYYYMMDD date columns.
+
+    Args:
+        data_dir (str): The path to the folder containing the CSV files.
+        database_name (str): The name of the SQLite database to create or connect to.
+    """
+    conn = None
     try:
-        con = duckdb.connect(database=database_name)
+        # Connect to the SQLite database (creates it if it doesn't exist)
+        conn = sqlite3.connect(database_name)
+        cursor = conn.cursor()
 
-        for filename in os.listdir(folder_path):
-            if filename.endswith(".csv"):
-                table_name = os.path.splitext(filename)[0]  # Remove .csv extension
-                file_path = os.path.join(folder_path, filename)
+        # Dictionary mapping table names to primary key column(s)
+        # These will be used with pandas to_sql to create the PK on initial table creation
+        sec_pk = {'sub': ['adsh'],
+                  'tag': ['tag', 'version'],
+                  'ren': ['adsh', 'report'],
+                  'pre': ['adsh', 'report', 'line'],
+                  'cal': ['adsh', 'grp', 'arc'],
+                  'dim': ['dimhash']}
 
-                # Option 1: Using COPY FROM (Faster for large files)
-                con.execute(f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM read_csv('{file_path}', AUTO_DETECT=TRUE);")
+        # Dictionary mapping table names to date columns (expected in YYYYMMDD format)
+        sec_date_column = {'sub': ['changed', 'period', 'filed', 'floatdate'],
+                           'num': ['ddate'],
+                           'txt': ['ddate']}
 
-                # Alternative option 2: Using pandas (For more complex transformations or smaller files)
-                # df = pd.read_csv(file_path)
-                # con.register(table_name, df)
-                # con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {table_name};")
-                # con.unregister(table_name) #unregister the pandas dataframe after copying to duckdb.
+        # List all files in the specified directory
+        all_files = os.listdir(data_dir)
+        csv_files = [f for f in all_files if f.endswith('.csv')]
 
-        con.close()
-        print(f"CSV files from '{folder_path}' loaded into DuckDB database '{database_name}'.")
+        # Iterate through the CSV files and load them into SQLite tables
+        for file_name in csv_files:
+            file_path = os.path.join(data_dir, file_name)
+            table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table name
 
+            print(f"Processing '{file_name}' into table '{table_name}'...")
+
+            # Check if the table already exists in the database
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                # If table does not exist, read CSV and load into the database
+                print(f"Table '{table_name}' does not exist. Creating and loading data.")
+                try:
+                    # Read the CSV into a pandas DataFrame
+                    df = pd.read_csv(file_path)
+
+                    # --- Handle Primary Key Creation during to_sql ---
+                    pk_cols = sec_pk.get(table_name)
+                    if pk_cols:
+                        # Check if PK columns exist in DataFrame
+                        if all(col in df.columns for col in pk_cols):
+                             print(f"Attempting to create table '{table_name}' with primary key on: {', '.join(pk_cols)}")
+                             try:
+                                 # Set columns as DataFrame index for to_sql to create PK
+                                 # Use inplace=False to avoid modifying the original DataFrame in place
+                                 df_with_index = df.set_index(pk_cols)
+                                 # to_sql will create the PK from the index
+                                 df_with_index.to_sql(table_name, conn, if_exists='replace', index=True)
+                                 print(f"Table '{table_name}' created successfully with primary key.")
+                             except Exception as e:
+                                 print(f"Error setting index or creating table with PK for '{table_name}': {e}")
+                                 # If setting index or creating with PK fails, fall back to creating without PK
+                                 print("Falling back to creating table without primary key constraint initially.")
+                                 df.to_sql(table_name, conn, if_exists='replace', index=False)
+                                 print(f"Table '{table_name}' created without primary key.")
+                        else:
+                             missing_cols = [col for col in pk_cols if col not in df.columns]
+                             print(f"Warning: Primary key columns {missing_cols} not found in '{file_name}'. Creating table without primary key.")
+                             # Create table without PK if columns are missing in CSV
+                             df.to_sql(table_name, conn, if_exists='replace', index=False)
+                             print(f"Table '{table_name}' created without primary key.")
+                    else:
+                        # No primary key defined for this table, create without PK
+                        print(f"No primary key defined for table '{table_name}'. Creating table without primary key definition.")
+                        df.to_sql(table_name, conn, if_exists='replace', index=False)
+                        print(f"Table '{table_name}' created.")
+
+                    # --- End Primary Key Creation ---
+
+                    print(f"Data loaded successfully into table '{table_name}'.")
+
+                    # --- Handle Date Conversion after initial load ---
+                    # Date conversion needs to happen after data is in the table
+                    if table_name in sec_date_column:
+                        print(f"Attempting to convert date columns for table '{table_name}'...")
+                        for col in sec_date_column[table_name]:
+                             # Check if the column exists in the table
+                             cursor.execute(f"PRAGMA table_info(\"{table_name}\");")
+                             cols_info = cursor.fetchall()
+                             col_names = [info[1] for info in cols_info]
+
+                             if col in col_names:
+                                  # SQL to convert YYYYMMDD (integer or text) to YYYY-MM-DD text format
+                                  # SQLite's date functions work well with 'YYYY-MM-DD' text.
+                                  # We use CAST to TEXT to ensure substr works, regardless of storage class.
+                                  # The WHERE clause attempts to only process values that look like an 8-digit date.
+                                  sql_update_date = f"""
+                                  UPDATE \"{table_name}\"
+                                  SET \"{col}\" = printf('%s-%s-%s',
+                                                   substr(CAST(\"{col}\" AS TEXT), 1, 4),
+                                                   substr(CAST(\"{col}\" AS TEXT), 5, 2),
+                                                   substr(CAST(\"{col}\" AS TEXT), 7, 2))
+                                  WHERE TYPEOF(\"{col}\") IN ('integer', 'text') AND LENGTH(CAST(\"{col}\" AS TEXT)) = 8;
+                                  """
+                                  # print(f"Executing date conversion SQL: {sql_update_date}") # Uncomment for debugging
+                                  try:
+                                       cursor.execute(sql_update_date)
+                                       conn.commit() # Commit the update changes
+                                       print(f"Converted date column '{col}' in table '{table_name}' to YYYY-MM-DD format.")
+                                  except Exception as e:
+                                       print(f"Error converting date column '{col}' in table '{table_name}': {e}")
+                             else:
+                                  print(f"Warning: Date column '{col}' not found in table '{table_name}'. Skipping date conversion.")
+                    # --- End Date Conversion ---
+
+                except Exception as e:
+                    print(f"Error processing '{file_name}': {e}")
+                    continue # Skip to the next file
+
+            else:
+                # If table exists, skip data loading based on the original IF NOT EXISTS logic.
+                # However, we should still attempt date conversion in case it failed before.
+                print(f"Table '{table_name}' already exists. Skipping data loading.")
+
+                # --- Attempt Date Conversion if table exists ---
+                # This block is the same as the one in the 'if not table_exists' block
+                if table_name in sec_date_column:
+                    print(f"Attempting to convert date columns for table '{table_name}'...")
+                    for col in sec_date_column[table_name]:
+                         cursor.execute(f"PRAGMA table_info(\"{table_name}\");")
+                         cols_info = cursor.fetchall()
+                         col_names = [info[1] for info in cols_info]
+
+                         if col in col_names:
+                              sql_update_date = f"""
+                              UPDATE \"{table_name}\"
+                              SET \"{col}\" = printf('%s-%s-%s',
+                                               substr(CAST(\"{col}\" AS TEXT), 1, 4),
+                                               substr(CAST(\"{col}\" AS TEXT), 5, 2),
+                                               substr(CAST(\"{col}\" AS TEXT), 7, 2))
+                              WHERE TYPEOF(\"{col}\") IN ('integer', 'text') AND LENGTH(CAST(\"{col}\" AS TEXT)) = 8;
+                              """
+                              try:
+                                   cursor.execute(sql_update_date)
+                                   conn.commit()
+                                   print(f"Converted date column '{col}' in table '{table_name}'.")
+                              except Exception as e:
+                                   print(f"Error converting date column '{col}' in table '{table_name}': {e}")
+                         else:
+                              print(f"Warning: Date column '{col}' not found in table '{table_name}'. Skipping date conversion.")
+                # --- End Date Conversion if table exists ---
+
+
+            print(f"Finished processing table '{table_name}'.")
+
+    except sqlite3.Error as se:
+        print(f"A SQLite database error occurred: {se}")
     except Exception as e:
-        print(f"An error occurred: {e}")
-        if 'con' in locals():
-            con.close()
+        print(f"An unexpected error occurred: {e}")
+    finally:
+        # Ensure the connection is closed even if errors occur
+        if conn:
+            conn.close()
+            print("Database connection closed.")
 
-name = 'google_ms_nvidia'
-load_csvs_to_duckdb(folder_path=f"../data/tables_{name}", database_name=f"../db_{name}.duckdb")
+# Example usage:
+# Replace 'alphabet-ms-nvidia' with the desired name prefix for your data directory and database file.
+name = 'alphabet-ms-nvidia'
+# Define the path to the directory containing your CSV files
+data_dir_path = f"../data/tables_{name}"
+# Define the name for your SQLite database file
+database_file_name = f"../{name}.sqlite" # Changed to .sqlite extension
+
+# Check if the data directory exists before attempting to process
+if not os.path.isdir(data_dir_path):
+    print(f"Error: Data directory not found at {data_dir_path}")
+else:
+    # Call the function to load the data
+    load_csvs_to_sqlite(data_dir=data_dir_path, database_name=database_file_name)
+# %% Cell 6
+
+import sqlite3
+import os
+import csv
+
+def load_csvs_to_sqlite_no_pandas(data_dir="../data/tables/", database_name="../db.sqlite"):
+    """
+    Loads all CSV files from a folder into a SQLite database without using pandas.
+    Creates tables with primary keys (if defined in sec_pk) on initial load
+    and attempts to convert YYYYMMDD date columns.
+
+    Args:
+        data_dir (str): The path to the folder containing the CSV files.
+        database_name (str): The name of the SQLite database to create or connect to.
+    """
+    conn = None
+    try:
+        # Connect to the SQLite database (creates it if it doesn't exist)
+        conn = sqlite3.connect(database_name)
+        cursor = conn.cursor()
+
+        # Dictionary mapping table names to primary key column(s)
+        sec_pk = {'sub': ['adsh'],
+                  'tag': ['tag', 'version'],
+                  'ren': ['adsh', 'report'],
+                  'pre': ['adsh', 'report', 'line'],
+                  'cal': ['adsh', 'grp', 'arc'],
+                  'dim': ['dimhash']}
+
+        # Dictionary mapping table names to date columns (expected in YYYYMMDD format)
+        sec_date_column = {'sub': ['changed', 'period', 'filed', 'floatdate'],
+                           'num': ['ddate'],
+                           'txt': ['ddate']}
+
+        # List all files in the specified directory
+        all_files = os.listdir(data_dir)
+        csv_files = [f for f in all_files if f.endswith('.csv')]
+
+        # Iterate through the CSV files and load them into SQLite tables
+        for file_name in csv_files:
+            file_path = os.path.join(data_dir, file_name)
+            table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table name
+
+            print(f"Processing '{file_name}' into table '{table_name}'...")
+
+            # Check if the table already exists in the database
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                print(f"Table '{table_name}' does not exist. Creating and loading data.")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        reader = csv.reader(f)
+                        header = next(reader)  # Read the header row
+
+                        # Sanitize column names for SQL (replace spaces, special chars if needed)
+                        # For simplicity, we'll just use them directly here, assuming they are valid.
+                        # In a real-world scenario, you might want to clean them up.
+                        column_names = [col.strip() for col in header]
+
+                        # Construct CREATE TABLE statement
+                        create_table_sql = f"CREATE TABLE \"{table_name}\" ("
+                        columns_definition = []
+
+                        # Determine primary key columns
+                        pk_cols = sec_pk.get(table_name, [])
+                        pk_definition = ""
+                        if pk_cols:
+                            # Ensure all PK columns exist in the header
+                            if all(col in column_names for col in pk_cols):
+                                pk_definition = f", PRIMARY KEY ({', '.join([f'\"{col}\"' for col in pk_cols])})"
+                                print(f"Defining primary key on: {', '.join(pk_cols)}")
+                            else:
+                                missing_cols = [col for col in pk_cols if col not in column_names]
+                                print(f"Warning: Primary key columns {missing_cols} not found in '{file_name}'. Table will be created without primary key.")
+                                pk_cols = [] # Clear pk_cols so no PK is added
+
+                        # Add column definitions (assuming TEXT type for simplicity, can enhance with type detection)
+                        columns_definition = [f"\"{col}\" TEXT" for col in column_names]
+                        create_table_sql += ", ".join(columns_definition) + pk_definition + ");"
+
+                        # Execute CREATE TABLE statement
+                        print(f"Executing CREATE TABLE: {create_table_sql}")
+                        cursor.execute(create_table_sql)
+                        conn.commit()
+                        print(f"Table '{table_name}' created.")
+
+                        # Prepare data for insertion
+                        data_to_insert = [row for row in reader]
+
+                        # Construct INSERT statement
+                        placeholders = ', '.join(['?'] * len(column_names))
+                        insert_sql = f"INSERT INTO \"{table_name}\" VALUES ({placeholders});"
+
+                        # Insert data in batches
+                        print(f"Inserting data into '{table_name}'...")
+                        cursor.executemany(insert_sql, data_to_insert)
+                        conn.commit()
+                        print(f"Data loaded successfully into table '{table_name}'.")
+
+                except Exception as e:
+                    print(f"Error processing '{file_name}': {e}")
+                    conn.rollback() # Rollback table creation if data load fails
+                    continue  # Skip to the next file
+
+            else:
+                # If table exists, skip initial data loading but still attempt date conversion
+                print(f"Table '{table_name}' already exists. Skipping initial data loading.")
+
+            # --- Attempt Date Conversion ---
+            if table_name in sec_date_column:
+                print(f"Attempting to convert date columns for table '{table_name}'...")
+                # Get current column names from the database table
+                cursor.execute(f"PRAGMA table_info(\"{table_name}\");")
+                cols_info = cursor.fetchall()
+                col_names_in_db = [info[1] for info in cols_info]
+
+                for col in sec_date_column[table_name]:
+                    if col in col_names_in_db:
+                        # SQL to convert YYYYMMDD (integer or text) to YYYY-MM-DD text format
+                        # It checks if the column type is integer or text and if the length is 8
+                        sql_update_date = f"""
+                        UPDATE \"{table_name}\"
+                        SET \"{col}\" = printf('%s-%s-%s',
+                                                substr(CAST(\"{col}\" AS TEXT), 1, 4),
+                                                substr(CAST(\"{col}\" AS TEXT), 5, 2),
+                                                substr(CAST(\"{col}\" AS TEXT), 7, 2))
+                        WHERE TYPEOF(\"{col}\") IN ('integer', 'text') AND LENGTH(CAST(\"{col}\" AS TEXT)) = 8;
+                        """
+                        try:
+                            cursor.execute(sql_update_date)
+                            conn.commit()
+                            print(f"Converted date column '{col}' in table '{table_name}' to YYYY-MM-DD format.")
+                        except Exception as e:
+                            print(f"Error converting date column '{col}' in table '{table_name}': {e}")
+                    else:
+                        print(f"Warning: Date column '{col}' not found in table '{table_name}'. Skipping date conversion.")
+            # --- End Date Conversion ---
+
+            print(f"Finished processing table '{table_name}'.")
+
+    except sqlite3.Error as se:
+        print(f"A SQLite database error occurred: {se}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    finally:
+        # Ensure the connection is closed even if errors occur
+        if conn:
+            conn.close()
+            print("Database connection closed.")
+
+# Example usage:
+# Replace 'alphabet-ms-nvidia' with the desired name prefix for your data directory and database file.
+name = 'alphabet-ms-nvidia'
+# Define the path to the directory containing your CSV files
+data_dir_path = f"../data/tables_{name}"
+# Define the name for your SQLite database file
+database_file_name = f"../{name}.sqlite" # Changed to .sqlite extension
+
+# Check if the data directory exists before attempting to process
+if not os.path.isdir(data_dir_path):
+    print(f"Error: Data directory not found at {data_dir_path}")
+else:
+    # Call the function to load the data
+    load_csvs_to_sqlite_no_pandas(data_dir=data_dir_path, database_name=database_file_name)
 # %%

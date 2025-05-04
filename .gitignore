@@ -1,5 +1,5 @@
 # Project Specific
-alphabet-ms-nvidia.duckdb
+alphabet-ms-nvidia*
 db.duckdb
 db_all.duckdb
 data/tables_*
