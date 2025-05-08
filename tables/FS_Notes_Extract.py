@@ -256,55 +256,8 @@ load_csvs_to_duckdb(data_dir=f"../data/tables_{name}", database_name=f"../{name}
 
 
 
+
 # %% Cell 4
-import sqlite3
-import os
-import pandas as pd
-
-def load_csvs_to_duckdb(data_dir="../data/tables/", database_name="../db.db"):
-    """
-    Loads all CSV files from a folder into a database.
-
-    Args:
-        data_dir (str): The path to the folder containing the CSV files.
-        database_name (str): The name of the database to create or connect to.
-    """
-    conn = sqlite3.connect(database_name)
-    sec_pk = {'sub': 'adsh', 'tag': 'tag, version', 'ren': 'adsh, report', 'pre': 'adsh, report, line', 'cal': 'adsh, grp, arc', 'dim': 'dimhash'}
-    sec_date_column =  {'sub': ['changed', 'period', 'filed', 'floatdate'], 'num': ['ddate'], 'txt': ['ddate']} 
-
-
-    # List all files in the specified directory
-    all_files = os.listdir(data_dir)
-    csv_files = [f for f in all_files if f.endswith('.csv')]
-    # Iterate through the CSV files and load them into tables
-    for file_name in csv_files:
-        file_path = os.path.join(data_dir, file_name)
-        table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table nam
-        try:
-            conn.execute(f"""CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM read_csv('{file_path}', AUTO_DETECT=TRUE);""")
-            if table_name in sec_date_column:
-                strptimes: str = ""
-                for col in sec_date_column[table_name]:
-                    sql_alter = f"ALTER TABLE {table_name} ALTER COLUMN {col} TYPE DATE USING STRPTIME(CAST({col} AS BIGINT)::VARCHAR, '%Y%m%d')::DATE;"
-                    print(sql_alter)
-                    conn.execute(sql_alter)
-            if table_name in sec_pk:
-                # Add primary key constraint
-                sql_pk = f"ALTER TABLE {table_name} ADD PRIMARY KEY ({sec_pk[table_name]});"
-                print(sql_pk)
-                conn.execute(sql_pk)
-            print(f"Loaded '{file_name}' into view '{table_name}'")
-        except Exception as e:
-            print(f"Error loading '{file_name}': {e}")
-
-    conn.close()
-
-name = 'alphabet-ms-nvidia'
-load_csvs_to_duckdb(data_dir=f"../data/tables_{name}", database_name=f"../{name}.db")
-
-
-# %% Cell 5
 import sqlite3
 import os
 import pandas as pd
@@ -494,171 +447,422 @@ if not os.path.isdir(data_dir_path):
 else:
     # Call the function to load the data
     load_csvs_to_sqlite(data_dir=data_dir_path, database_name=database_file_name)
-# %% Cell 6
 
-import sqlite3
+
+# %% Cell 5
 import os
 import csv
+import psycopg # Import psycopg v3
 
-def load_csvs_to_sqlite_no_pandas(data_dir="../data/tables/", database_name="../db.sqlite"):
+def infer_postgres_type(value):
     """
-    Loads all CSV files from a folder into a SQLite database without using pandas.
-    Creates tables with primary keys (if defined in sec_pk) on initial load
-    and attempts to convert YYYYMMDD date columns.
+    Simple type inference for PostgreSQL based on a single value.
+    This is a basic implementation and might need refinement
+    depending on the complexity and consistency of your CSV data.
+    It prefers numeric types and defaults to TEXT.
+    """
+    if value is None or value == '':
+        # PostgreSQL allows NULLs in any type, we can't infer type from nulls.
+        # Returning TEXT as a safe default if only seen nulls in sample,
+        # but the actual type will be determined by the first non-null value or header analysis.
+        # For COPY FROM, initial table creation needs a best guess.
+        # Let's rely on seeing non-empty values in sample for better inference.
+        return None # Indicate ambiguity, should not happen if sample_rows has data
+
+    try:
+        # Try integer first (covers values like '123', '20231231')
+        # Check if the value is purely numeric (contains only digits and maybe a sign)
+        if str(value).lstrip('-+').isdigit():
+             # Consider date format YYYYMMDD as a special case for potential date conversion later
+            if len(str(value).strip()) == 8: # Simple check for 8-digit numbers
+                 return 'BIGINT' # Keep as BIGINT initially, convert to DATE in Phase 3
+            return 'BIGINT' # Use BIGINT for larger integer ranges
+    except ValueError:
+        pass # Not an integer
+
+    try:
+        # Try float/numeric (covers values like '123.45')
+        float(value)
+        return 'NUMERIC' # Use NUMERIC for precision
+    except ValueError:
+        pass # Not a number
+
+    # If it's not clearly numeric, treat as text
+    return 'TEXT'
+
+
+def load_csvs_to_postgres_psycopg(data_dir="../data/tables/",
+                                   db_name="your_postgres_db",
+                                   db_user="your_postgres_user",
+                                   db_password="your_postgres_password",
+                                   db_host="localhost",
+                                   db_port="5432"):
+    """
+    Loads all CSV files from a folder into a PostgreSQL database using psycopg (v3).
 
     Args:
         data_dir (str): The path to the folder containing the CSV files.
-        database_name (str): The name of the SQLite database to create or connect to.
+        db_name (str): PostgreSQL database name.
+        db_user (str): PostgreSQL user name.
+        db_password (str): PostgreSQL password.
+        db_host (str): PostgreSQL host.
+        db_port (str): PostgreSQL port.
     """
-    conn = None
+    conn_params = {
+        "dbname": db_name,
+        "user": db_user,
+        "password": db_password,
+        "host": db_host,
+        "port": db_port,
+    }
+
+    # Mappings for primary keys and date columns - Keep these
+    sec_pk = {'sub': 'adsh', 'tag': 'tag, version', 'ren': 'adsh, report', 'pre': 'adsh, report, line', 'cal': 'adsh, grp, arc', 'dim': 'dimhash'}
+    sec_date_column = {'sub': ['changed', 'period', 'filed', 'floatdate'], 'num': ['ddate'], 'txt': ['ddate']}
+
+    # List all files in the specified directory
     try:
-        # Connect to the SQLite database (creates it if it doesn't exist)
-        conn = sqlite3.connect(database_name)
-        cursor = conn.cursor()
-
-        # Dictionary mapping table names to primary key column(s)
-        sec_pk = {'sub': ['adsh'],
-                  'tag': ['tag', 'version'],
-                  'ren': ['adsh', 'report'],
-                  'pre': ['adsh', 'report', 'line'],
-                  'cal': ['adsh', 'grp', 'arc'],
-                  'dim': ['dimhash']}
-
-        # Dictionary mapping table names to date columns (expected in YYYYMMDD format)
-        sec_date_column = {'sub': ['changed', 'period', 'filed', 'floatdate'],
-                           'num': ['ddate'],
-                           'txt': ['ddate']}
-
-        # List all files in the specified directory
         all_files = os.listdir(data_dir)
         csv_files = [f for f in all_files if f.endswith('.csv')]
+    except FileNotFoundError:
+        print(f"Error: Data directory not found at '{data_dir}'.")
+        return
 
-        # Iterate through the CSV files and load them into SQLite tables
+    # Establish connection outside the loop for efficiency, but manage transactions per file
+    conn = None
+    try:
+        # Connect to PostgreSQL database
+        conn = psycopg.connect(**conn_params)
+        # Set autocommit to False to manage transactions manually per file
+        conn.autocommit = False
+        print("Successfully connected to PostgreSQL.")
+
         for file_name in csv_files:
             file_path = os.path.join(data_dir, file_name)
-            table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table name
+            # Use the filename (without extension) as the table name.
+            # Convert to lowercase as PostgreSQL table names are typically lowercase by default.
+            table_name = os.path.splitext(file_name)[0].lower()
 
             print(f"Processing '{file_name}' into table '{table_name}'...")
 
-            # Check if the table already exists in the database
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
-            table_exists = cursor.fetchone() is not None
+            try:
+                # Use a 'with' block for the cursor, it will be closed automatically
+                with conn.cursor() as cur:
 
-            if not table_exists:
-                print(f"Table '{table_name}' does not exist. Creating and loading data.")
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        reader = csv.reader(f)
-                        header = next(reader)  # Read the header row
+                    # --- Phase 1: Schema Inference and Table Creation ---
+                    # Read header and infer types by sampling data
+                    columns = []
+                    column_types = {}
+                    sample_size = 100 # Number of rows to sample for type inference
 
-                        # Sanitize column names for SQL (replace spaces, special chars if needed)
-                        # For simplicity, we'll just use them directly here, assuming they are valid.
-                        # In a real-world scenario, you might want to clean them up.
-                        column_names = [col.strip() for col in header]
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            reader = csv.reader(f)
+                            try:
+                                header = next(reader) # Read header row
+                                columns = [col.strip() for col in header] # Get column names
+                            except StopIteration:
+                                print(f"Warning: File '{file_name}' is empty or has no header. Skipping.")
+                                continue # Skip to the next file
 
-                        # Construct CREATE TABLE statement
-                        create_table_sql = f"CREATE TABLE \"{table_name}\" ("
-                        columns_definition = []
+                            # Read sample rows to infer types more accurately
+                            sample_rows = []
+                            try:
+                                for i in range(sample_size):
+                                    row = next(reader)
+                                    # Ensure row has enough columns before appending
+                                    if len(row) == len(columns):
+                                         sample_rows.append(row)
+                                    else:
+                                        # Handle potential malformed rows in sample
+                                        print(f"Warning: Sample row {i+2} in '{file_name}' has inconsistent column count ({len(row)} instead of {len(columns)}). Skipping this row for inference.")
 
-                        # Determine primary key columns
-                        pk_cols = sec_pk.get(table_name, [])
-                        pk_definition = ""
-                        if pk_cols:
-                            # Ensure all PK columns exist in the header
-                            if all(col in column_names for col in pk_cols):
-                                pk_definition = f", PRIMARY KEY ({', '.join([f'\"{col}\"' for col in pk_cols])})"
-                                print(f"Defining primary key on: {', '.join(pk_cols)}")
+                            except StopIteration:
+                                # File has fewer rows than sample_size
+                                pass
+
+                            # Infer types based on sampled data.
+                            # Initialize with a default (like TEXT), then refine.
+                            # If no sample rows, all will remain TEXT.
+                            for col in columns:
+                                column_types[col] = 'TEXT' # Default type
+
+                            if sample_rows:
+                                for i, col in enumerate(columns):
+                                    # Collect non-empty values for this column across sample rows
+                                    col_values = [row[i].strip() for row in sample_rows if i < len(row) and row[i].strip() != '']
+                                    if col_values: # Only infer if there are non-empty values
+                                        # Check if ALL non-empty values in the sample match a type
+                                        inferred_type = None
+                                        for val in col_values:
+                                            current_val_type = infer_postgres_type(val)
+                                            if inferred_type is None:
+                                                inferred_type = current_val_type
+                                            elif inferred_type != current_val_type:
+                                                # Found conflicting types in sample, default to TEXT
+                                                inferred_type = 'TEXT'
+                                                break # Stop checking values for this column
+                                        if inferred_type is not None: # Update type if inference was successful
+                                             column_types[col] = inferred_type
+                                        else: # Should not happen with current infer_postgres_type
+                                             column_types[col] = 'TEXT' # Fallback just in case
+
+                            # IMPORTANT: Reset file pointer to the beginning for the COPY operation
+                            f.seek(0)
+
+
+                    except FileNotFoundError:
+                        print(f"Error: File not found at '{file_path}'. Skipping.")
+                        continue # Skip to next file
+                    except csv.Error as e:
+                         print(f"Error reading CSV header or sample rows from '{file_name}': {e}. Skipping.")
+                         continue # Skip to next file
+                    except Exception as e:
+                         print(f"An unexpected error occurred during schema inference for '{file_name}': {e}. Skipping.")
+                         continue
+
+
+                    # Construct CREATE TABLE statement
+                    # Decide on column definitions based on inferred types
+                    columns_definition = []
+                    for col in columns:
+                         # Quote column name for safety
+                        col_def = f'"{col}" {column_types[col]}'
+                        columns_definition.append(col_def)
+
+                    if not columns_definition:
+                        print(f"Warning: No columns inferred for '{file_name}'. Skipping table creation.")
+                        continue # Skip to next file
+
+                    # Drop table if it exists to ensure clean load (similar to DuckDB behavior)
+                    drop_table_sql = f'DROP TABLE IF EXISTS "{table_name}";'
+                    print(f"Executing: {drop_table_sql}")
+                    cur.execute(drop_table_sql)
+
+                    create_table_sql = f"""
+                        CREATE TABLE "{table_name}" (
+                            {", ".join(columns_definition)}
+                        );
+                    """
+                    print(f"Executing: {create_table_sql}")
+                    cur.execute(create_table_sql)
+                    print(f"Created table '{table_name}' with inferred schema.")
+
+                    # --- Phase 2: Data Loading using COPY FROM ---
+                    # Use COPY FROM STDIN for efficient loading from file object
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            # The copy_from method handles the COPY command internally.
+                            # We provide the file object, table name, columns, format, and header option.
+                            print(f"Executing COPY FROM for '{file_name}'...")
+                            cur.copy_from(
+                                f,                  # File-like object
+                                table_name,         # Target table name
+                                columns=columns,    # List of column names (matches CSV header)
+                                format='csv',       # File format
+                                header=True         # Skip the header row in the file
+                            )
+
+                        print(f"Loaded data from '{file_name}' into table '{table_name}' using COPY FROM.")
+
+                    except Exception as e:
+                        print(f"Error during COPY FROM for '{file_name}': {e}")
+                        raise # Re-raise to trigger rollback
+
+
+                    # --- Phase 3: Data Type Conversion (ALTER TABLE for Dates) ---
+                    if table_name in sec_date_column:
+                        print(f"Converting date columns for table '{table_name}'...")
+                        for col in sec_date_column[table_name]:
+                            # Check if column exists based on our header columns
+                            if col in columns:
+                                try:
+                                    # PostgreSQL TO_DATE function expects text. Cast if necessary.
+                                    # Assume date format is YYYYMMDD and stored as TEXT or BIGINT
+                                    sql_alter = f"""
+                                        ALTER TABLE "{table_name}"
+                                        ALTER COLUMN "{col}" TYPE DATE
+                                        USING TO_DATE(CAST("{col}" AS TEXT), 'YYYYMMDD');
+                                    """
+                                    print(f"Executing: {sql_alter}")
+                                    cur.execute(sql_alter)
+                                    print(f"Converted column '{col}' to DATE.")
+                                except Exception as e:
+                                    print(f"Warning: Could not convert column '{col}' to DATE for table '{table_name}': {e}")
                             else:
-                                missing_cols = [col for col in pk_cols if col not in column_names]
-                                print(f"Warning: Primary key columns {missing_cols} not found in '{file_name}'. Table will be created without primary key.")
-                                pk_cols = [] # Clear pk_cols so no PK is added
+                                 print(f"Warning: Date column '{col}' not found in CSV header for table '{table_name}'. Skipping conversion.")
 
-                        # Add column definitions (assuming TEXT type for simplicity, can enhance with type detection)
-                        columns_definition = [f"\"{col}\" TEXT" for col in column_names]
-                        create_table_sql += ", ".join(columns_definition) + pk_definition + ");"
 
-                        # Execute CREATE TABLE statement
-                        print(f"Executing CREATE TABLE: {create_table_sql}")
-                        cursor.execute(create_table_sql)
-                        conn.commit()
-                        print(f"Table '{table_name}' created.")
+                    # --- Phase 4: Add Primary Key ---
+                    if table_name in sec_pk:
+                        pk_columns_str = sec_pk[table_name]
+                        pk_columns_list = [col.strip() for col in pk_columns_str.split(',')]
 
-                        # Prepare data for insertion
-                        data_to_insert = [row for row in reader]
+                        # Verify primary key columns exist based on header columns
+                        if all(col in columns for col in pk_columns_list):
+                            print(f"Adding primary key constraint for table '{table_name}' on columns: {pk_columns_str}")
+                            try:
+                                # Add primary key constraint - requires columns to be NOT NULL and unique.
+                                # You might need to add ALTER COLUMN ... SET NOT NULL first if they are nullable
+                                # and ensure data has no duplicates for the PK columns.
+                                # For simplicity here, we add the PK constraint directly.
+                                # Quoting column names.
+                                quoted_pk_columns = ', '.join([f'"{c}"' for c in pk_columns_list])
+                                sql_pk = f"""
+                                    ALTER TABLE "{table_name}"
+                                    ADD PRIMARY KEY ({quoted_pk_columns});
+                                """
+                                print(f"Executing: {sql_pk}")
+                                cur.execute(sql_pk)
+                                print(f"Added primary key to '{table_name}'.")
+                            except Exception as e:
+                                # Catch errors if PK cannot be added (e.g., duplicate keys, nulls)
+                                print(f"Warning: Could not add primary key to '{table_name}': {e}")
+                        else:
+                             print(f"Warning: Primary key columns '{pk_columns_str}' not all found in CSV header for table '{table_name}'. Skipping primary key constraint.")
 
-                        # Construct INSERT statement
-                        placeholders = ', '.join(['?'] * len(column_names))
-                        insert_sql = f"INSERT INTO \"{table_name}\" VALUES ({placeholders});"
+                # If everything in the try block within the loop succeeded, commit the transaction
+                conn.commit()
+                print(f"Successfully processed and committed '{file_name}'.")
 
-                        # Insert data in batches
-                        print(f"Inserting data into '{table_name}'...")
-                        cursor.executemany(insert_sql, data_to_insert)
-                        conn.commit()
-                        print(f"Data loaded successfully into table '{table_name}'.")
+            except Exception as e:
+                # Catch any exception that occurred within the file processing try block
+                print(f"An error occurred while processing '{file_name}'. Rolling back transaction: {e}")
+                conn.rollback() # Rollback the transaction for this file
 
-                except Exception as e:
-                    print(f"Error processing '{file_name}': {e}")
-                    conn.rollback() # Rollback table creation if data load fails
-                    continue  # Skip to the next file
 
-            else:
-                # If table exists, skip initial data loading but still attempt date conversion
-                print(f"Table '{table_name}' already exists. Skipping initial data loading.")
-
-            # --- Attempt Date Conversion ---
-            if table_name in sec_date_column:
-                print(f"Attempting to convert date columns for table '{table_name}'...")
-                # Get current column names from the database table
-                cursor.execute(f"PRAGMA table_info(\"{table_name}\");")
-                cols_info = cursor.fetchall()
-                col_names_in_db = [info[1] for info in cols_info]
-
-                for col in sec_date_column[table_name]:
-                    if col in col_names_in_db:
-                        # SQL to convert YYYYMMDD (integer or text) to YYYY-MM-DD text format
-                        # It checks if the column type is integer or text and if the length is 8
-                        sql_update_date = f"""
-                        UPDATE \"{table_name}\"
-                        SET \"{col}\" = printf('%s-%s-%s',
-                                                substr(CAST(\"{col}\" AS TEXT), 1, 4),
-                                                substr(CAST(\"{col}\" AS TEXT), 5, 2),
-                                                substr(CAST(\"{col}\" AS TEXT), 7, 2))
-                        WHERE TYPEOF(\"{col}\") IN ('integer', 'text') AND LENGTH(CAST(\"{col}\" AS TEXT)) = 8;
-                        """
-                        try:
-                            cursor.execute(sql_update_date)
-                            conn.commit()
-                            print(f"Converted date column '{col}' in table '{table_name}' to YYYY-MM-DD format.")
-                        except Exception as e:
-                            print(f"Error converting date column '{col}' in table '{table_name}': {e}")
-                    else:
-                        print(f"Warning: Date column '{col}' not found in table '{table_name}'. Skipping date conversion.")
-            # --- End Date Conversion ---
-
-            print(f"Finished processing table '{table_name}'.")
-
-    except sqlite3.Error as se:
-        print(f"A SQLite database error occurred: {se}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+         print(f"Error establishing initial database connection or listing files: {e}")
     finally:
-        # Ensure the connection is closed even if errors occur
         if conn:
             conn.close()
             print("Database connection closed.")
 
-# Example usage:
-# Replace 'alphabet-ms-nvidia' with the desired name prefix for your data directory and database file.
-name = 'alphabet-ms-nvidia'
-# Define the path to the directory containing your CSV files
-data_dir_path = f"../data/tables_{name}"
-# Define the name for your SQLite database file
-database_file_name = f"../{name}.sqlite" # Changed to .sqlite extension
 
-# Check if the data directory exists before attempting to process
-if not os.path.isdir(data_dir_path):
-    print(f"Error: Data directory not found at {data_dir_path}")
-else:
-    # Call the function to load the data
-    load_csvs_to_sqlite_no_pandas(data_dir=data_dir_path, database_name=database_file_name)
+# Example usage:
+# Replace with your actual PostgreSQL database credentials and desired database name, host, and port.
+# You need to have the database created in PostgreSQL beforehand.
+
+name = 'alphabet-ms-nvidia'
+load_csvs_to_postgres_psycopg(data_dir=f"../data/tables_{name}",
+                               db_name="fin_report",
+                               db_user="puser",
+                               db_password=os.environ.get('AKASAKA_DB_PW', 'default_password'),
+                               db_host="localhost", # e.g., 'localhost' or an IP address
+                               db_port="5432") # e.g., '5432' is the default PostgreSQL port
+
+
+# %% Cell 6
+import os
+import pandas as pd
+import psycopg
+from sqlalchemy import create_engine
+
+def load_csvs_to_postgres(data_dir="../data/tables/", 
+                         db_name="fin_report",
+                         host="localhost", 
+                         port="5432", 
+                         user="puser", 
+                         password="postgres"):
+    """
+    Loads all CSV files from a folder into a PostgreSQL database.
+    
+    Args:
+        data_dir (str): The path to the folder containing the CSV files.
+        db_name (str): The name of the PostgreSQL database to create or connect to.
+        host (str): PostgreSQL server host.
+        port (str): PostgreSQL server port.
+        user (str): PostgreSQL username.
+        password (str): PostgreSQL password.
+    """
+    
+    # Connect to PostgreSQL server to create database if it doesn't exist
+    with psycopg.connect(f"host={host} port={port} user={user} password={password}", autocommit=True) as conn:
+        # Check if database exists, if not create it
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s", (db_name,))
+            exists = cursor.fetchone()
+            if not exists:
+                cursor.execute(f"CREATE DATABASE {db_name}")
+                print(f"Created database '{db_name}'")
+    
+    # Create SQLAlchemy engine for efficient data loading
+    engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{db_name}')
+    
+    # Connect to the specific database for operations
+    conn = psycopg.connect(f"host={host} port={port} user={user} password={password} dbname={db_name}")
+    cursor = conn.cursor()
+    
+    # Primary keys for different tables
+    sec_pk = {
+        'sub': 'adsh', 
+        'tag': 'tag, version', 
+        'ren': 'adsh, report', 
+        'pre': 'adsh, report, line', 
+        'cal': 'adsh, grp, arc', 
+        'dim': 'dimhash'
+    }
+    
+    # Date columns that need conversion
+    sec_date_column = {
+        'sub': ['changed', 'period', 'filed', 'floatdate'], 
+        'num': ['ddate'], 
+        'txt': ['ddate']
+    }
+    
+    # List all files in the specified directory
+    all_files = os.listdir(data_dir)
+    csv_files = [f for f in all_files if f.endswith('.csv')]
+    
+    # Iterate through the CSV files and load them into PostgreSQL tables
+    for file_name in csv_files:
+        file_path = os.path.join(data_dir, file_name)
+        table_name = os.path.splitext(file_name)[0]  # Use the filename (without extension) as the table name
+        
+        try:
+            # Read CSV file with pandas
+            df = pd.read_csv(file_path)
+            
+            # Convert data types for date columns if applicable
+            if table_name in sec_date_column:
+                for col in sec_date_column[table_name]:
+                    if col in df.columns:
+                        # Convert integer dates to PostgreSQL date format
+                        df[col] = pd.to_datetime(df[col].astype(str), format='%Y%m%d', errors='coerce')
+            
+            # Write DataFrame to PostgreSQL
+            df.to_sql(table_name, engine, if_exists='replace', index=False)
+            
+            # Add primary key constraint if applicable
+            if table_name in sec_pk:
+                # Commit the current transaction
+                conn.commit()
+                
+                # Add primary key constraint (PostgreSQL syntax)
+                pk_columns = sec_pk[table_name]
+                sql_pk = f"ALTER TABLE {table_name} ADD PRIMARY KEY ({pk_columns});"
+                print(sql_pk)
+                cursor.execute(sql_pk)
+                conn.commit()
+            
+            print(f"Loaded '{file_name}' into table '{table_name}'")
+            
+        except Exception as e:
+            print(f"Error loading '{file_name}': {e}")
+            # psycopg v3 automatically rolls back on exception in transactions
+            print("Transaction rolled back automatically")
+    
+    cursor.close()
+    conn.close()
+
+# Example usage:
+# Replace with your actual PostgreSQL database credentials and desired database name, host, and port.
+# You need to have the database created in PostgreSQL beforehand.
+name = 'alphabet-ms-nvidia'
+load_csvs_to_postgres(data_dir=f"../data/tables_{name}",
+                               db_name="fin_report",
+                               host="localhost", # e.g., 'localhost' or an IP address
+                               port="5432", # e.g., '5432' is the default PostgreSQL port
+                               user="puser",
+                               password=os.environ.get('AKASAKA_DB_PW', 'default_password')) 
 # %%
